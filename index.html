@@ -1,108 +1,131 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>MP Bridge</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-</head><body style="font:16px sans-serif;background:#111;color:#fff;padding:16px">
+<html><head><meta charset="utf-8"><title>MP Bridge</title></head>
+<body style="font:16px sans-serif;background:#111;color:#fff;padding:16px">
 <div id="s">Starting...</div>
-<div style="margin-top:10px;opacity:.7">Keep this tab open while you play. Switch back to your game tab.</div>
+<button id="go" style="font-size:20px;padding:10px 20px;margin-top:14px">Click to start</button>
+<div style="margin-top:12px;opacity:.7;max-width:420px">This tab will turn into a blank tab. Leave that blank tab open while you play, then switch back to your game tab.</div>
 <script>
-var op=window.opener,st=document.getElementById('s')
-function toK(m){m.from='bridge';try{op.postMessage(m,'*')}catch(e){}}
-function say(t){st.textContent=t;toK({t:'status',text:t})}
-var q=new URLSearchParams(location.search)
-var mode=q.get('mode'),code=(q.get('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,'')
-var PRE='bssmp-',CFG={},peer=null,conns=[],hostConn=null,players={},nextId=1,myId='',role='',tries=0
+function bridgeMain(){
+  var khan=window.__khan,cfg=window.__cfg,st=document.getElementById('s')
+  function toK(m){m.from='bridge';m.token=cfg.token;try{khan.postMessage(m,'*')}catch(e){}}
+  function say(t){st.textContent=t;toK({t:'status',text:t})}
+  var mode=cfg.mode,code=cfg.code
+  var PRE='bssmp-',CFG={},peer=null,conns=[],hostConn=null,players={},nextId=1,myId='',role='',tries=0
 
-function tick(){
-  var now=Date.now(),k,i
-  for(k in players){if(k!=='host'&&now-players[k].seen>5000)delete players[k]}
-  var msg={t:'w',p:players}
-  for(i=0;i<conns.length;i++){if(conns[i].c.open)conns[i].c.send(msg)}
-  toK({t:'w',p:players,id:'host'})
-}
-
-function startHost(id,after){
-  try{if(peer)peer.destroy()}catch(e){}
-  peer=new Peer(PRE+id,CFG)
-  peer.on('open',function(){
-    role='host';myId='host'
-    say('Hosting. Room code: '+id)
-    toK({t:'ready',role:'host',code:id,id:'host'})
-  })
-  peer.on('connection',function(c){
-    var cid='p'+(nextId++)
-    c.on('open',function(){
-      conns.push({id:cid,c:c})
-      c.send({t:'id',id:cid})
-      say('Hosting '+id+'. Friends in room: '+conns.length)
-    })
-    c.on('data',function(d){
-      if(d&&d.t==='s')players[cid]={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()}
-    })
-    c.on('close',function(){
-      conns=conns.filter(function(o){return o.c!==c})
-      delete players[cid]
-      say('Hosting '+id+'. Friends in room: '+conns.length)
-    })
-  })
-  peer.on('error',function(e){
-    if(e.type==='unavailable-id'){if(after)after();else say('That room code is already in use. Press Host again.')}
-    else say('Error: '+e.type)
-  })
-}
-
-function startClient(id,noRoom){
-  try{if(peer)peer.destroy()}catch(e){}
-  peer=new Peer(undefined,CFG)
-  var opened=false
-  peer.on('open',function(){
-    var c=peer.connect(PRE+id)
-    hostConn=c
-    setTimeout(function(){if(!opened&&!noRoom)say('Could not connect. Check the code and try again.')},12000)
-    c.on('open',function(){
-      opened=true;role='client'
-      say('Joined room '+id)
-      toK({t:'ready',role:'client',code:id})
-    })
-    c.on('data',function(d){
-      if(!d)return
-      if(d.t==='id'){myId=d.id;toK({t:'id',id:myId})}
-      else if(d.t==='w')toK({t:'w',p:d.p,id:myId})
-    })
-    c.on('close',function(){say('The host left');toK({t:'closed'})})
-  })
-  peer.on('error',function(e){
-    if(e.type==='peer-unavailable'){if(noRoom)noRoom();else say('No room with that code')}
-    else say('Error: '+e.type)
-  })
-}
-
-function lobby(){
-  tries++
-  if(tries>4){say('Lobby is busy. Try again in a moment.');return}
-  say('Looking for the lobby...')
-  startClient('LOBBY',function(){
-    startHost('LOBBY',function(){lobby()})
-  })
-}
-
-window.addEventListener('message',function(e){
-  if(e.source!==op)return
-  var d=e.data
-  if(!d||d.from!=='khan')return
-  if(d.t==='s'){
-    if(role==='host'){players.host={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()};tick()}
-    else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'s',n:d.n,x:d.x,y:d.y,z:d.z})
-  }else if(d.t==='leave'){
-    try{if(peer)peer.destroy()}catch(x){}
-    window.close()
+  function tick(){
+    var now=Date.now(),k,i
+    for(k in players){if(k!=='host'&&now-players[k].seen>5000)delete players[k]}
+    var msg={t:'w',p:players}
+    for(i=0;i<conns.length;i++){if(conns[i].c.open)conns[i].c.send(msg)}
+    toK({t:'w',p:players,id:'host'})
   }
-})
 
-if(!op){say('Open this from the game, not directly.')}
-else if(typeof Peer==='undefined'){say('PeerJS did not load.')}
-else if(mode==='host'&&code)startHost(code)
-else if(mode==='join'&&code)startClient(code)
-else if(mode==='lobby')lobby()
-else say('Missing mode or code.')
+  function startHost(id,after){
+    try{if(peer)peer.destroy()}catch(e){}
+    peer=new Peer(PRE+id,CFG)
+    peer.on('open',function(){
+      role='host';myId='host'
+      say('Hosting. Room code: '+id)
+      toK({t:'ready',role:'host',code:id,id:'host'})
+    })
+    peer.on('connection',function(c){
+      var cid='p'+(nextId++)
+      c.on('open',function(){
+        conns.push({id:cid,c:c})
+        c.send({t:'id',id:cid})
+        say('Hosting '+id+'. Friends in room: '+conns.length)
+      })
+      c.on('data',function(d){
+        if(d&&d.t==='s')players[cid]={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()}
+      })
+      c.on('close',function(){
+        conns=conns.filter(function(o){return o.c!==c})
+        delete players[cid]
+        say('Hosting '+id+'. Friends in room: '+conns.length)
+      })
+    })
+    peer.on('error',function(e){
+      if(e.type==='unavailable-id'){if(after)after();else say('That room code is already in use. Press Host again.')}
+      else say('Error: '+e.type)
+    })
+  }
+
+  function startClient(id,noRoom){
+    try{if(peer)peer.destroy()}catch(e){}
+    peer=new Peer(undefined,CFG)
+    var opened=false
+    peer.on('open',function(){
+      var c=peer.connect(PRE+id)
+      hostConn=c
+      setTimeout(function(){if(!opened&&!noRoom)say('Could not connect. Check the code and try again.')},12000)
+      c.on('open',function(){
+        opened=true;role='client'
+        say('Joined room '+id)
+        toK({t:'ready',role:'client',code:id})
+      })
+      c.on('data',function(d){
+        if(!d)return
+        if(d.t==='id'){myId=d.id;toK({t:'id',id:myId})}
+        else if(d.t==='w')toK({t:'w',p:d.p,id:myId})
+      })
+      c.on('close',function(){say('The host left');toK({t:'closed'})})
+    })
+    peer.on('error',function(e){
+      if(e.type==='peer-unavailable'){if(noRoom)noRoom();else say('No room with that code')}
+      else say('Error: '+e.type)
+    })
+  }
+
+  function lobby(){
+    tries++
+    if(tries>4){say('Lobby is busy. Try again in a moment.');return}
+    say('Looking for the lobby...')
+    startClient('LOBBY',function(){
+      startHost('LOBBY',function(){lobby()})
+    })
+  }
+
+  window.addEventListener('message',function(e){
+    if(e.source!==khan)return
+    var d=e.data
+    if(!d||d.from!=='khan')return
+    if(d.t==='s'){
+      if(role==='host'){players.host={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()};tick()}
+      else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'s',n:d.n,x:d.x,y:d.y,z:d.z})
+    }else if(d.t==='leave'){
+      try{if(peer)peer.destroy()}catch(x){}
+      window.close()
+    }
+  })
+
+  toK({t:'hello'})
+  window.__ready=true
+  if(typeof Peer==='undefined'){say('PeerJS did not load.')}
+  else if(mode==='host'&&code)startHost(code)
+  else if(mode==='join'&&code)startClient(code)
+  else if(mode==='lobby')lobby()
+  else say('Missing mode or code.')
+}
+
+var st=document.getElementById('s'),q=new URLSearchParams(location.search)
+var cfg={mode:q.get('mode'),code:(q.get('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,''),token:q.get('token')||''}
+if(!window.opener){st.textContent='Open this from the game, not directly.';document.getElementById('go').style.display='none'}
+else st.textContent='Ready. Click the button to start.'
+document.getElementById('go').onclick=function(){
+  var w=window.open('about:blank')
+  if(!w){st.textContent='Popup blocked. Allow popups for this site, then click again.';return}
+  w.__khan=window.opener
+  w.__cfg=cfg
+  var src='('+bridgeMain.toString()+')()'
+  w.document.open()
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font:16px sans-serif;background:#111;color:#fff;padding:16px"><div id="s">Starting...</div><div style="margin-top:10px;opacity:.7">Keep this tab open while you play. Switch back to your game tab.</div><script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script><script>'+src+'<\/script></body></html>')
+  w.document.close()
+  st.textContent='Starting...'
+  var n=0,iv=setInterval(function(){
+    n++
+    if(w.__ready){clearInterval(iv);setTimeout(function(){window.close()},700)}
+    else if(n>100){clearInterval(iv);st.textContent='Something went wrong. Close this tab and try again.'}
+  },100)
+}
 </script>
 </body></html>
