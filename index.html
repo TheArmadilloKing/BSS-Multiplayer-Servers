@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Bridge</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head><body style="font:16px sans-serif">
+Bridge page. You can close this.
+<script>
+function out(m){m.from='bridge';try{(window.opener||window.parent).postMessage(m,'*')}catch(e){}}
+out({t:'hello'})
+window.addEventListener('message',function(e){
+  if(e.data&&e.data.t==='ping')out({t:'pong'})
+})
+var done=false
+function rep(ok,x){if(done)return;done=true;out(ok?{t:'relay',ok:true,id:x}:{t:'relay',ok:false,err:x})}
+try{
+  if(typeof Peer==='undefined'){rep(false,'PeerJS did not load')}
+  else{
+    var p=new Peer()
+    p.on('open',function(id){rep(true,id)})
+    p.on('error',function(e){rep(false,e.type)})
+    setTimeout(function(){rep(false,'no answer in 8 seconds')},8000)
+  }
+}catch(e){rep(false,e.message)}
+</script>
+</body></html>
