@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>BSS bridge frame</title></head>
 <body style="font:14px sans-serif;background:#111;color:#fff;padding:12px"><div id="s">This page works inside the game. You do not need to open it.</div>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="peerjs.min.js"></script>
+<script>window.Peer||document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/script>')</script>
+<script>window.Peer||document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>')</script>
 <script>
 function bridgeMain(){
   var khan=window.__khan,cfg=window.__cfg,st=document.getElementById('s')
