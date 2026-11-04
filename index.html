@@ -7,105 +7,169 @@
 <script>
 function bridgeMain(){
   var khan=window.__khan,cfg=window.__cfg,st=document.getElementById('s')
+  var PRE='bssmp-',CFG={host:'0.peerjs.com',port:443,path:'/',secure:true}
+  var peer=null,conns=[],hostConn=null,players={},nextId=1,myId='',role='',tries=0,code=cfg.code,mode=cfg.mode,ready=false,tk=null,left=false,migrating=false,full=false
   function toK(m){m.from='bridge';m.token=cfg.token;try{khan.postMessage(m,'*')}catch(e){}}
-  function say(t){st.textContent=t;toK({t:'status',text:t})}
-  var mode=cfg.mode,code=cfg.code
-  var PRE='bssmp-',CFG={},peer=null,conns=[],hostConn=null,players={},nextId=1,myId='',role='',tries=0
-
-  function tick(){
-    var now=Date.now(),k,i
-    for(k in players){if(k!=='host'&&now-players[k].seen>5000)delete players[k]}
-    var msg={t:'w',p:players}
-    for(i=0;i<conns.length;i++){if(conns[i].c.open)conns[i].c.send(msg)}
-    toK({t:'w',p:players,id:'host'})
+  function say(t){if(st)st.textContent=t;toK({t:'status',text:t})}
+  function num(v){v=+v;return isFinite(v)?Math.round(v*100)/100:0}
+  function clean(d){
+    var c=String(d.c||''),h=d.h?1:0
+    return {n:String(d.n||'Bee').slice(0,16),c:/^#[0-9a-f]{6}$/i.test(c)?c:'',x:h?0:num(d.x),y:h?0:num(d.y),z:h?0:num(d.z),h:h,seen:Date.now()}
   }
-
-  function startHost(id,after){
+  function cleanEv(ev){
+    var k=ev&&ev.k
+    if(k!=='chat'&&k!=='emo'&&k!=='ping')return null
+    return {k:k,m:String(ev.m||'').slice(0,k==='chat'?100:8),x:num(ev.x),y:num(ev.y),z:num(ev.z)}
+  }
+  function killPeer(){
+    clearInterval(tk);tk=null
     try{if(peer)peer.destroy()}catch(e){}
-    peer=new Peer(PRE+id,CFG)
-    peer.on('open',function(){
-      role='host';myId='host'
+    peer=null;conns=[];hostConn=null;players={};ready=false;role=''
+  }
+  function sendAll(msg,except){
+    var i
+    for(i=0;i<conns.length;i++){if(conns[i].c!==except&&conns[i].c.open){try{conns[i].c.send(msg)}catch(e){}}}
+  }
+  function world(){
+    var now=Date.now(),k,o,w={}
+    for(k in players){
+      o=players[k]
+      if(k!=='host'&&now-o.seen>5000){delete players[k];continue}
+      w[k]={n:o.n,c:o.c,x:o.x,y:o.y,z:o.z,h:o.h,a:now-o.seen}
+    }
+    return w
+  }
+  function tick(){
+    var w=world()
+    sendAll({t:'w',p:w})
+    toK({t:'w',p:w,id:'host'})
+  }
+  function fatal(e){
+    var t=e.type
+    if(!ready&&(t==='network'||t==='server-error'||t==='socket-error'||t==='socket-closed'))toK({t:'fail',why:t})
+  }
+  function startHost(id,after){
+    killPeer()
+    var p=peer=new Peer(PRE+id,CFG)
+    p.on('open',function(){
+      if(peer!==p)return
+      toK({t:'sig'})
+      role='host';myId='host';ready=true;migrating=false;code=id
+      tk=setInterval(tick,66)
       say('Hosting. Room code: '+id)
-      toK({t:'ready',role:'host',code:id,id:'host'})
+      toK({t:'ready',role:'host',code:id,id:'host',bv:3})
     })
-    peer.on('connection',function(c){
-      var cid='p'+(nextId++)
+    p.on('connection',function(c){
+      if(peer!==p)return
+      if(conns.length>=15){
+        c.on('open',function(){try{c.send({t:'full'})}catch(e){};setTimeout(function(){try{c.close()}catch(e){}},400)})
+        return
+      }
+      var cid='p'+(nextId++),o={id:cid,c:c,ev:0}
       c.on('open',function(){
-        conns.push({id:cid,c:c})
+        conns.push(o)
         c.send({t:'id',id:cid})
         say('Hosting '+id+'. Friends in room: '+conns.length)
       })
       c.on('data',function(d){
-        if(d&&d.t==='s')players[cid]={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()}
+        if(!d)return
+        if(d.t==='s')players[cid]=clean(d)
+        else if(d.t==='e'){
+          var now=Date.now(),ev=cleanEv(d.ev)
+          if(!ev||now-o.ev<250)return
+          o.ev=now
+          ev.f=cid;ev.n=players[cid]?players[cid].n:'Bee'
+          sendAll({t:'e',ev:ev},c)
+          toK({t:'e',ev:ev})
+        }
       })
       c.on('close',function(){
-        conns=conns.filter(function(o){return o.c!==c})
+        conns=conns.filter(function(q){return q!==o})
         delete players[cid]
         say('Hosting '+id+'. Friends in room: '+conns.length)
       })
     })
-    peer.on('error',function(e){
+    p.on('disconnected',function(){if(peer===p&&!p.destroyed){try{p.reconnect()}catch(e){}}})
+    p.on('error',function(e){
+      if(peer!==p)return
       if(e.type==='unavailable-id'){if(after)after();else say('That room code is already in use. Press Host again.')}
-      else say('Error: '+e.type)
+      else{fatal(e);say('Error: '+e.type)}
     })
   }
-
   function startClient(id,noRoom){
-    try{if(peer)peer.destroy()}catch(e){}
-    peer=new Peer(undefined,CFG)
-    var opened=false
-    peer.on('open',function(){
-      var c=peer.connect(PRE+id)
+    killPeer()
+    var p=peer=new Peer(undefined,CFG),opened=false,done=false
+    full=false
+    function nr(){if(done)return;done=true;if(noRoom)noRoom();else say('No room with that code')}
+    p.on('open',function(){
+      if(peer!==p)return
+      toK({t:'sig'})
+      var c=p.connect(PRE+id)
       hostConn=c
-      setTimeout(function(){if(!opened&&!noRoom)say('Could not connect. Check the code and try again.')},12000)
+      setTimeout(function(){
+        if(opened||done||peer!==p)return
+        if(noRoom)nr();else say('Could not connect. Check the code and try again.')
+      },12000)
       c.on('open',function(){
-        opened=true;role='client'
+        if(peer!==p||done)return
+        opened=true;done=true;role='client';ready=true;migrating=false;code=id
         say('Joined room '+id)
-        toK({t:'ready',role:'client',code:id})
+        toK({t:'ready',role:'client',code:id,bv:3})
       })
       c.on('data',function(d){
         if(!d)return
         if(d.t==='id'){myId=d.id;toK({t:'id',id:myId})}
         else if(d.t==='w')toK({t:'w',p:d.p,id:myId})
+        else if(d.t==='e')toK({t:'e',ev:d.ev})
+        else if(d.t==='full'){full=true;say('That room is full');toK({t:'full'})}
       })
-      c.on('close',function(){say('The host left');toK({t:'closed'})})
+      c.on('close',function(){
+        if(peer!==p||left||full||!opened)return
+        say('The host left. Finding a new host...')
+        toK({t:'closed'})
+        setTimeout(function(){if(!left){migrating=true;tries=0;lobby()}},300+Math.random()*1500)
+      })
     })
-    peer.on('error',function(e){
-      if(e.type==='peer-unavailable'){if(noRoom)noRoom();else say('No room with that code')}
-      else say('Error: '+e.type)
+    p.on('error',function(e){
+      if(peer!==p)return
+      if(e.type==='peer-unavailable')nr()
+      else{fatal(e);say('Error: '+e.type)}
     })
   }
-
   function lobby(){
     tries++
-    if(tries>4){say('Lobby is busy. Try again in a moment.');return}
-    say('Looking for the lobby...')
-    startClient('LOBBY',function(){
-      startHost('LOBBY',function(){lobby()})
+    if(tries>8){say('Could not find or start the room. Press Again.');return}
+    say(migrating?'Finding a new host...':'Looking for the lobby...')
+    startClient(code,function(){
+      startHost(code,function(){setTimeout(lobby,700+Math.random()*900)})
     })
   }
-
   window.addEventListener('message',function(e){
     if(e.source!==khan)return
     var d=e.data
     if(!d||d.from!=='khan')return
     if(d.t==='s'){
-      if(role==='host'){players.host={n:String(d.n||'Bee').slice(0,16),x:+d.x||0,y:+d.y||0,z:+d.z||0,seen:Date.now()};tick()}
-      else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'s',n:d.n,x:d.x,y:d.y,z:d.z})
+      if(role==='host')players.host=clean(d)
+      else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'s',n:d.n,c:d.c,x:d.x,y:d.y,z:d.z,h:d.h})
+    }else if(d.t==='e'){
+      var ev=cleanEv(d.ev)
+      if(!ev)return
+      if(role==='host'){ev.f='host';ev.n=players.host?players.host.n:'Bee';sendAll({t:'e',ev:ev})}
+      else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'e',ev:ev})
     }else if(d.t==='leave'){
-      try{if(peer)peer.destroy()}catch(x){}
+      left=true;killPeer()
       window.close()
     }
   })
-
-  toK({t:'hello'})
+  toK({t:'hello',bv:3})
   window.__ready=true
-  if(typeof Peer==='undefined'){say('PeerJS did not load.')}
+  if(typeof Peer==='undefined'){toK({t:'fail',why:'lib'});say('PeerJS did not load.')}
   else if(mode==='host'&&code)startHost(code)
   else if(mode==='join'&&code)startClient(code)
-  else if(mode==='lobby')lobby()
+  else if(mode==='lobby'&&code)lobby()
   else say('Missing mode or code.')
 }
+
 
 var st=document.getElementById('s'),q=new URLSearchParams(location.search)
 var cfg={mode:q.get('mode'),code:(q.get('code')||'').toUpperCase().replace(/[^A-Z0-9]/g,''),token:q.get('token')||''}
