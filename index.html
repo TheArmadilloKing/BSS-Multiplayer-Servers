@@ -157,10 +157,12 @@ function bridgeMain(){
       if(role==='host'){ev.f='host';ev.n=players.host?players.host.n:'Bee';sendAll({t:'e',ev:ev})}
       else if(role==='client'&&hostConn&&hostConn.open)hostConn.send({t:'e',ev:ev})
     }else if(d.t==='leave'){
+      if(window.__inline)return
       left=true;killPeer()
       window.close()
     }
   })
+  if(window.__inline)window.__bridgeStop=function(){left=true;killPeer()}
   toK({t:'hello',bv:3})
   window.__ready=true
   if(typeof Peer==='undefined'){toK({t:'fail',why:'lib'});say('PeerJS did not load.')}
@@ -182,7 +184,7 @@ document.getElementById('go').onclick=function(){
   w.__cfg=cfg
   var src='('+bridgeMain.toString()+')()'
   w.document.open()
-  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font:16px sans-serif;background:#111;color:#fff;padding:16px"><div id="s">Starting...</div><div style="margin-top:10px;opacity:.7">Keep this tab open while you play. Switch back to your game tab.</div><script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script><script>'+src+'<\/script></body></html>')
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font:16px sans-serif;background:#111;color:#fff;padding:16px"><div id="s">Starting...</div><div style="margin-top:10px;opacity:.7">Keep this tab open while you play. Switch back to your game tab.</div><script src="https://thearmadilloking.github.io/BSS-Multiplayer-Servers/peerjs.min.js"><\/script><script>window.Peer||document.write(\'<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\\/script>\')<\/script><script>window.Peer||document.write(\'<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\\/script>\')<\/script><script>'+src+'<\/script></body></html>')
   w.document.close()
   st.textContent='Starting...'
   var n=0,iv=setInterval(function(){
