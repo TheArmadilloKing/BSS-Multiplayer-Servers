@@ -6,8 +6,8 @@ var CODE=CFG.code||'armadillo'
 var MP_URL=CFG.mp||'https://cdn.jsdelivr.net/gh/TheArmadilloKing/BSS-Multiplayer-Servers@main/bssmp2.js'
 var Z=99997
 var mods={},order=[],act={},bus={},keys={},adminOn=false,booted=false,pending=[]
-var S={off:{},urls:[],pasted:[],mp:0}
-try{var sv=JSON.parse(localStorage.getItem('bssmod')||'{}');if(sv.off)S.off=sv.off;if(sv.urls)S.urls=sv.urls;if(sv.pasted)S.pasted=sv.pasted;if(sv.mp)S.mp=1}catch(e){}
+var S={off:{},urls:[],pasted:[],mp:0,inst:{}}
+try{var sv=JSON.parse(localStorage.getItem('bssmod')||'{}');if(sv.off)S.off=sv.off;if(sv.urls)S.urls=sv.urls;if(sv.pasted)S.pasted=sv.pasted;if(sv.mp)S.mp=1;if(sv.inst)S.inst=sv.inst}catch(e){}
 function save(){try{localStorage.setItem('bssmod',JSON.stringify(S))}catch(e){}}
 
 /* ---------- small helpers ---------- */
@@ -104,6 +104,12 @@ function makeApi(inst){
     api.on('key',function(e){if(e.down&&e.key===k)fn(e)})
   }
   api.toast=toast
+  api.hideUI=function(h){
+    var q=document.querySelectorAll('[data-bssui]'),i
+    ui.launch.style.display=h?'none':''
+    if(h)ui.win.style.display='none'
+    for(i=0;i<q.length;i++)q[i].style.visibility=h?'hidden':''
+  }
   api.store={
     get:function(k,d){try{var v=localStorage.getItem('bssmod:'+id+':'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
     set:function(k,v){try{localStorage.setItem('bssmod:'+id+':'+k,JSON.stringify(v))}catch(e){}}
@@ -194,7 +200,7 @@ function register(mod){
 }
 
 /* ---------- menu ---------- */
-var ui={win:null,launch:null,tabs:null,content:null,play:null,mods:null,list:null,cur:'play',mpHold:null,mpNote:null,mpInstall:null,mpRemove:null,urlList:null}
+var ui={win:null,launch:null,tabs:null,content:null,play:null,mods:null,list:null,cur:'play',mpHold:null,mpNote:null,mpInstall:null,mpRemove:null,urlList:null,store:null}
 function addTab(inst){
   var id=inst.mod.id
   inst.tab=btn(inst.mod.name||id,function(){showTab(id)})
@@ -331,6 +337,9 @@ function buildHub(){
   ui.mods=mk('div','display:none;flex-direction:column;gap:6px')
   ui.list=mk('div','display:flex;flex-direction:column;gap:3px')
   ui.urlList=mk('div','display:flex;flex-direction:column;gap:3px')
+  ui.mods.appendChild(mk('b',null,'Mod store (tap Install)'))
+  ui.store=mk('div','display:flex;flex-direction:column;gap:8px')
+  ui.mods.appendChild(ui.store)
   ui.mods.appendChild(mk('b',null,'Installed mods'))
   ui.mods.appendChild(ui.list)
   ui.mods.appendChild(mk('div','opacity:.7','Only add mods you trust. A mod can do anything this page can.'))
@@ -433,12 +442,169 @@ var JUMP=({id:'jump',name:'High jump',version:'1.0',author:'built-in',init:funct
   })
 }})
 
+/* ---------- default mods (the Mod store) ---------- */
+var STORE=[]
+JUMP.desc='Jump much higher. A slider sets the power.'
+STORE.push(JUMP)
+STORE.push({id:'glider',name:'Glider',version:'1.0',author:'BSS',desc:'Hold Space while falling to float down slowly.',init:function(a){
+  var cap=a.store.get('cap',3)
+  a.ui.slider('Fall speed',1,10,cap,function(v){cap=v;a.store.set('cap',v)})
+  a.ui.text('Hold Space while you fall.')
+  a.on('tick',function(){var p=a.player();if(p&&a.key(' ')&&p.vy<-cap)a.velocity(null,-cap,null)})
+}})
+STORE.push({id:'sprint',name:'Sprint',version:'1.0',author:'BSS',desc:'Run faster. You pick the top speed.',init:function(a){
+  var on=false,max=a.store.get('max',14)
+  a.ui.toggle('Sprint on',false,function(v){on=v})
+  a.ui.slider('Top speed',5,40,max,function(v){max=v;a.store.set('max',v)})
+  a.on('tick',function(){
+    var p=a.player(),h,f
+    if(!on||!p)return
+    h=Math.sqrt(p.vx*p.vx+p.vz*p.vz)
+    if(h>0.5&&h<max){f=Math.min(max/h,1.12);a.velocity(p.vx*f,null,p.vz*f)}
+  })
+}})
+STORE.push({id:'hud',name:'Info Panel',version:'1.0',author:'BSS',desc:'Shows your position, speed, FPS and compass on screen.',init:function(a){
+  var d=document.createElement('div'),fr=0,fps=0,t0=performance.now()
+  d.setAttribute('data-bssui','1')
+  d.style.cssText='position:fixed;top:8px;right:8px;z-index:99996;background:rgba(0,0,0,.6);color:#fff;font:12px monospace;padding:6px 9px;border-radius:8px;pointer-events:none;white-space:pre'
+  document.documentElement.appendChild(d)
+  a.on('tick',function(){fr++})
+  a.every(500,function(){
+    var now=performance.now(),p=a.player(),deg,sp,dirs=['N','NE','E','SE','S','SW','W','NW']
+    fps=Math.round(fr*1000/(now-t0));fr=0;t0=now
+    if(!p){d.textContent='waiting for the game...';return}
+    deg=((p.yaw*180/Math.PI)%360+360)%360
+    sp=Math.sqrt(p.vx*p.vx+p.vz*p.vz)
+    d.textContent='x '+p.x.toFixed(0)+'   y '+p.y.toFixed(0)+'   z '+p.z.toFixed(0)+'\nspeed '+sp.toFixed(1)+'   '+fps+' fps\nfacing '+dirs[Math.round(deg/45)%8]+' '+Math.round(deg)+' deg'
+  })
+  this.stop=function(){d.remove()}
+}})
+STORE.push({id:'home',name:'Home Spot',version:'1.0',author:'BSS',desc:'Save a spot, then zip back to it any time. Press H to go home.',init:function(a){
+  var h=a.store.get('home',null),info=a.ui.text(h?'Home is saved.':'No home yet.')
+  function go(){if(!h){a.toast('Set a home first');return}a.teleport(h[0],h[1]+1,h[2]);a.toast('Welcome home!')}
+  a.ui.button('Set home here',function(){var p=a.player();if(!p){a.toast('Start the game first');return}h=[p.x,p.y,p.z];a.store.set('home',h);info('Home is saved.');a.toast('Home saved')})
+  a.ui.button('Go home (H)',go)
+  a.keybind('h',go)
+}})
+STORE.push({id:'filter',name:'Color Filter',version:'1.0',author:'BSS',desc:'Change how the world looks: sunset, night, old photo, rainbow party.',init:function(a){
+  var F={'Normal':'','Sunset':'sepia(.5) saturate(1.5) hue-rotate(-15deg)','Night':'brightness(.55) saturate(.8) hue-rotate(190deg)','Old photo':'sepia(1) contrast(1.1)','Black and white':'grayscale(1)','Vivid':'saturate(1.8) contrast(1.1)','Rainbow':'x'},cur='Normal',hue=0,names=Object.keys(F)
+  function cv(){
+    var all=document.querySelectorAll('canvas'),best=null,ar=0,i,r
+    for(i=0;i<all.length;i++){
+      if(all[i].style.zIndex==='99998'||all[i].style.zIndex==='99996')continue
+      r=all[i].getBoundingClientRect()
+      if(r.width*r.height>ar){ar=r.width*r.height;best=all[i]}
+    }
+    return best
+  }
+  function apply(){var c=cv();if(c)c.style.filter=cur==='Rainbow'?'hue-rotate('+hue+'deg) saturate(1.4)':F[cur]}
+  a.ui.select('Look',function(){return names.map(function(n){return {label:n,value:n}})},function(v){cur=v;apply()})
+  a.every(100,function(){if(cur==='Rainbow'){hue=(hue+6)%360;apply()}})
+  this.stop=function(){var c=cv();if(c)c.style.filter=''}
+}})
+STORE.push({id:'confetti',name:'Confetti',version:'1.0',author:'BSS',desc:'Press K or the button to pop a burst of confetti. Friends see a chat note.',init:function(a){
+  var cv=null,parts=[],raf=0,lastChat=0
+  function step(){
+    var x=cv.getContext('2d'),i,p
+    x.clearRect(0,0,cv.width,cv.height)
+    for(i=parts.length-1;i>=0;i--){
+      p=parts[i];p.vy+=0.35;p.vx*=0.99;p.x+=p.vx;p.y+=p.vy;p.life--
+      if(p.life<=0||p.y>cv.height+20){parts.splice(i,1);continue}
+      x.fillStyle=p.c;x.fillRect(p.x,p.y,p.s,p.s*0.6)
+    }
+    raf=parts.length?requestAnimationFrame(step):0
+  }
+  function pop(){
+    var i,n,cols=['#ffd54f','#ff6b6b','#4dd0e1','#81c784','#ba68c8','#ffffff']
+    if(!cv){
+      cv=document.createElement('canvas')
+      cv.setAttribute('data-bssui','1')
+      cv.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:99996'
+      document.documentElement.appendChild(cv)
+    }
+    cv.width=window.innerWidth;cv.height=window.innerHeight
+    for(i=0;i<140;i++)parts.push({x:cv.width/2,y:cv.height*0.55,vx:(Math.random()-.5)*16,vy:-Math.random()*16-4,s:4+Math.random()*5,c:cols[i%6],life:120+Math.random()*60})
+    if(!raf)raf=requestAnimationFrame(step)
+    n=Date.now()
+    if(n-lastChat>3000&&a.mp.inRoom()){lastChat=n;a.mp.chat('*pops confetti*')}
+  }
+  a.ui.button('Pop confetti (K)',pop)
+  a.keybind('k',pop)
+  this.stop=function(){cancelAnimationFrame(raf);raf=0;if(cv)cv.remove();cv=null;parts=[]}
+}})
+STORE.push({id:'quickchat',name:'Quick Chat',version:'1.0',author:'BSS',desc:'One-tap messages for your friends in multiplayer.',init:function(a){
+  ['Hi!','GG','Follow me!','Need help!','Bzzz!','Thanks!'].forEach(function(t){
+    a.ui.button(t,function(){if(!a.mp.inRoom()){a.toast('Join a room first');return}a.mp.chat(t)})
+  })
+}})
+STORE.push({id:'stopwatch',name:'Stopwatch',version:'1.0',author:'BSS',desc:'Time your races. Start, stop, lap and reset.',init:function(a){
+  var acc=0,st=0,laps=[],show=a.ui.text('0:00.0'),lp=a.ui.text('')
+  function el(){return acc+(st?Date.now()-st:0)}
+  function fmt(ms){var s=ms/1000,m=Math.floor(s/60);return m+':'+('0'+(s%60).toFixed(1)).slice(-4)}
+  a.ui.button('Start / Stop',function(){if(st){acc+=Date.now()-st;st=0}else st=Date.now()})
+  a.ui.button('Lap',function(){laps.push(fmt(el()));lp('Laps: '+laps.slice(-5).join('   '))})
+  a.ui.button('Reset',function(){acc=0;st=0;laps=[];lp('')})
+  a.every(100,function(){show(fmt(el()))})
+}})
+STORE.push({id:'sparkle',name:'Sparkle Trail',version:'1.0',author:'BSS',desc:'Your mouse leaves a trail of golden sparkles.',init:function(a){
+  var last=0
+  function mv(e){
+    var n=Date.now(),s
+    if(n-last<30)return
+    last=n
+    s=document.createElement('div')
+    s.style.cssText='position:fixed;pointer-events:none;z-index:99996;border-radius:50%;background:#ffd54f;box-shadow:0 0 8px #ffb300;width:7px;height:7px;transition:all .7s ease-out;opacity:1;left:'+(e.clientX-3)+'px;top:'+(e.clientY-3)+'px'
+    document.documentElement.appendChild(s)
+    setTimeout(function(){s.style.opacity='0';s.style.transform='translate(0,18px) scale(.2)'},20)
+    setTimeout(function(){s.remove()},800)
+  }
+  document.addEventListener('mousemove',mv)
+  this.stop=function(){document.removeEventListener('mousemove',mv)}
+}})
+STORE.push({id:'photo',name:'Photo Mode',version:'1.0',author:'BSS',desc:'Press P to hide the menu and overlays for clean screenshots.',init:function(a){
+  var hid=false
+  function t(){hid=!hid;a.hideUI(hid);if(hid)a.toast('Photo mode. Press P to bring the menu back.')}
+  a.ui.button('Photo mode (P)',t)
+  a.keybind('p',t)
+  this.stop=function(){if(hid)a.hideUI(false)}
+}})
+function renderStore(){
+  if(!ui.store)return
+  ui.store.textContent=''
+  STORE.forEach(function(m){
+    var r=mk('div','display:flex;gap:6px;align-items:center'),d=mk('div','flex:1;min-width:0'),on=!!S.inst[m.id]
+    d.appendChild(mk('b',null,m.name))
+    d.appendChild(mk('div','font-size:11px;opacity:.8',m.desc))
+    r.appendChild(d)
+    r.appendChild(btn(on?'Remove':'Install',function(){if(on)uninstallStore(m.id);else installStore(m.id)}))
+    ui.store.appendChild(r)
+  })
+}
+function installStore(id){
+  var m=STORE.filter(function(x){return x.id===id})[0]
+  if(!m)return
+  S.inst[id]=1;delete S.off[id];save()
+  register(m)
+  renderStore()
+  toast('Installed '+m.name+(act[id]&&act[id].body?' - see its tab at the top':''))
+}
+function uninstallStore(id){
+  delete S.inst[id];save()
+  stop(id,true)
+  delete mods[id]
+  order=order.filter(function(x){return x!==id})
+  renderMods();renderStore()
+  toast('Removed')
+}
+
+
 function boot(){
   buildHub()
   booted=true
   pending.forEach(function(id){if(!S.off[id])start(id)})
   pending=[]
-  register(JUMP)
+  STORE.forEach(function(m){if(S.inst[m.id])register(m)})
+  renderStore()
   S.urls.forEach(function(u){loadScript(u)})
   S.pasted.forEach(function(c){try{runCode(c)}catch(e){}})
   renderMods()
@@ -450,3 +616,4 @@ function boot(){
 }
 if(document.readyState==='complete')boot();else window.addEventListener('load',boot)
 })()
+
