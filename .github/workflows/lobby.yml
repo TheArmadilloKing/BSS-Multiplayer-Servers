@@ -1,0 +1,18 @@
+name: Public Lobby
+on:
+  schedule:
+    - cron: '0 */5 * * *'
+  workflow_dispatch:
+jobs:
+  lobby:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --omit=dev
+        working-directory: server
+      - run: node lobby-bot.js
+        working-directory: server
