@@ -7,7 +7,9 @@
 <script>
 function bridgeMain(){
   var khan=window.__khan,cfg=window.__cfg,st=document.getElementById('s')
-  var PRE='bssmp-',CFG={host:'0.peerjs.com',port:443,path:'/',secure:true}
+  var PRE='bssmp-',ICES=[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'},{urls:['turn:eu-0.turn.peerjs.com:3478','turn:us-0.turn.peerjs.com:3478'],username:'peerjs',credential:'peerjsp'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turns:openrelay.metered.ca:443?transport=tcp','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}],
+  CFG={host:'0.peerjs.com',port:443,path:'/',secure:true,config:{iceServers:ICES,iceCandidatePoolSize:2}},
+  CFGR={host:'0.peerjs.com',port:443,path:'/',secure:true,config:{iceServers:ICES,iceTransportPolicy:'relay'}}
   var peer=null,conns=[],hostConn=null,players={},nextId=1,myId='',role='',tries=0,code=cfg.code,mode=cfg.mode,ready=false,tk=null,left=false,migrating=false,full=false
   function toK(m){m.from='bridge';m.token=cfg.token;try{khan.postMessage(m,'*')}catch(e){}}
   function say(t){if(st)st.textContent=t;toK({t:'status',text:t})}
@@ -96,9 +98,9 @@ function bridgeMain(){
       else{fatal(e);say('Error: '+e.type)}
     })
   }
-  function startClient(id,noRoom){
+  function startClient(id,noRoom,relay){
     killPeer()
-    var p=peer=new Peer(undefined,CFG),opened=false,done=false
+    var p=peer=new Peer(undefined,relay?CFGR:CFG),opened=false,done=false
     full=false
     function nr(){if(done)return;done=true;if(noRoom)noRoom();else say('No room with that code')}
     p.on('open',function(){
@@ -108,8 +110,10 @@ function bridgeMain(){
       hostConn=c
       setTimeout(function(){
         if(opened||done||peer!==p)return
-        if(noRoom)nr();else say('Could not connect. Check the code and try again.')
-      },12000)
+        if(noRoom){nr();return}
+        if(!relay){done=true;say('Still trying, using a relay...');startClient(id,noRoom,true);return}
+        say('Could not connect. Check the code and try again. (If it is right, try a different network, like phone data.)')
+      },relay?25000:15000)
       c.on('open',function(){
         if(peer!==p||done)return
         opened=true;done=true;role='client';ready=true;migrating=false;code=id
