@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BSShub Mod Maker</title></head><body>
+
+<style>
+:root{--bg:#fff8e6;--fg:#2b2412;--card:#fff;--line:#e8d9a8;--acc:#e0a100;--accfg:#2b2412;--code:#2b2412;--codefg:#ffe9a6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1a10;--fg:#f4ead0;--card:#2a2616;--line:#4a4222;--acc:#f0b429;--accfg:#1d1a10;--code:#0f0d07;--codefg:#ffe9a6;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1d1a10;--fg:#f4ead0;--card:#2a2616;--line:#4a4222;--acc:#f0b429;--accfg:#1d1a10;--code:#0f0d07;--codefg:#ffe9a6;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif;padding-block:18px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:640px;margin:0 auto;display:grid;gap:14px}
+h1{margin:0;font-size:24px}h2{margin:0 0 8px;font-size:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+label{display:grid;gap:3px;margin-bottom:8px;font-size:13px}
+input,select,textarea{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0;width:100%;box-sizing:border-box}
+button{font:inherit;font-weight:600;padding:8px 12px;border:0;border-radius:8px;background:var(--acc);color:var(--accfg);cursor:pointer}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:end}.row>*{flex:1 1 120px}
+.piece{border:1px dashed var(--line);border-radius:8px;padding:8px;margin-bottom:8px;display:grid;gap:6px}
+pre{background:var(--code);color:var(--codefg);padding:10px;border-radius:8px;overflow:auto;font-size:12px;margin:0 0 8px;max-height:320px}
+.mut{opacity:.7;font-size:13px}
+</style>
+<main>
+<h1>BSShub Mod Maker</h1>
+<p class="mut" style="margin:0">Build a mod, copy the code, put it in a file on GitHub. Anyone can add it with the file's https link in BSShub's Mods tab.</p>
+<div class="card"><h2>1. About your mod</h2>
+<label>Name<input id="n" value="My Cool Mod"></label>
+<label>Your name<input id="a" value="Cherish"></label>
+<label>What it does<input id="d" value="Does cool stuff."></label></div>
+<div class="card"><h2>2. Add pieces</h2>
+<div class="row"><select id="t">
+<option value="msg">Button: show a message</option>
+<option value="honey">Button: give honey</option>
+<option value="up">Button: hop up</option>
+<option value="key">Key shortcut: show a message</option>
+<option value="text">Plain text</option>
+<option value="code">My own code (advanced)</option></select>
+<button id="add" style="flex:0 0 auto">Add</button></div>
+<div id="pieces" style="margin-top:10px"></div></div>
+<div class="card"><h2>3. Your mod file</h2>
+<p class="mut" style="margin:0 0 8px">Name the GitHub file like <b id="fn">my-cool-mod.js</b>. Its link will be <b>https://cdn.jsdelivr.net/gh/TheArmadilloKing/BSS-Multiplayer-Servers@main/<span id="fn2">my-cool-mod.js</span></b></p>
+<pre id="out"></pre><button id="copy">Copy mod code</button> <button id="sub">Submit to the community store</button> <span id="ok" class="mut"></span><p class="mut" style="margin:10px 0 0">Submitting opens GitHub (you need a free GitHub account). Press <b>Submit new issue</b> there. The store owner checks every mod before it goes live.</p></div>
+</main>
+<script>
+var P=[],$=function(i){return document.getElementById(i)}
+var DEF={msg:{label:'Say hello',val:'Hello!'},honey:{label:'Give honey',val:'1000'},up:{label:'Hop up',val:'20'},key:{label:'j',val:'You pressed it!'},text:{label:'',val:'Hi!'},code:{label:'',val:"api.toast('my code ran')"}}
+var NAMES={msg:['Button text','Message'],honey:['Button text','Amount'],up:['Button text','Height'],key:['Key (one letter)','Message'],text:['(not used)','Text'],code:['(not used)','Code, uses api']}
+function q(s){return JSON.stringify(String(s))}
+function build(){
+ var slug=($('n').value||'mod').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'mod',L=[]
+ P.forEach(function(p){
+  var v=p.val,l=p.label
+  if(p.t==='msg')L.push("    api.ui.button("+q(l)+", function () { api.toast("+q(v)+") })")
+  if(p.t==='honey')L.push("    api.ui.button("+q(l)+", function () {\n      var p = api.player(); if (!p) { api.toast('Start the game first'); return }\n      p.raw.honey += "+(parseFloat(v)||0)+"\n      if (p.raw.updateInventory) p.raw.updateInventory()\n    })")
+  if(p.t==='up')L.push("    api.ui.button("+q(l)+", function () {\n      var p = api.player(); if (!p) { api.toast('Start the game first'); return }\n      api.teleport(p.x, p.y + "+(parseFloat(v)||10)+", p.z)\n    })")
+  if(p.t==='key')L.push("    api.keybind("+q((l||'j').charAt(0).toLowerCase())+", function () { api.toast("+q(v)+") })")
+  if(p.t==='text')L.push("    api.ui.text("+q(v)+")")
+  if(p.t==='code')L.push("    "+v.split('\n').join('\n    '))
+ })
+ if(!L.length)L.push("    api.ui.text('Add some pieces!')")
+ $('fn').textContent=$('fn2').textContent=slug+'.js'
+ $('out').textContent="BSSMod.register({\n  id: "+q(slug)+",\n  name: "+q($('n').value)+",\n  version: '1.0',\n  author: "+q($('a').value)+",\n  desc: "+q($('d').value)+",\n  init: function (api) {\n"+L.join('\n')+"\n  }\n})\n"
+}
+function draw(){
+ var h=$('pieces');h.textContent=''
+ P.forEach(function(p,i){
+  var d=document.createElement('div');d.className='piece'
+  var n=NAMES[p.t],html=''
+  if(p.t!=='text'&&p.t!=='code')html+='<label>'+n[0]+'<input data-k="label"></label>'
+  html+='<label>'+n[1]+(p.t==='code'?'<textarea rows="4" data-k="val"></textarea>':'<input data-k="val">')+'</label><button data-rm style="background:transparent;color:inherit;border:1px solid var(--line)">Remove</button>'
+  d.innerHTML=html
+  d.querySelectorAll('[data-k]').forEach(function(e){e.value=p[e.dataset.k];e.oninput=function(){p[e.dataset.k]=e.value;build()}})
+  d.querySelector('[data-rm]').onclick=function(){P.splice(i,1);draw();build()}
+  h.appendChild(d)
+ })
+}
+$('add').onclick=function(){var t=$('t').value;P.push({t:t,label:DEF[t].label,val:DEF[t].val});draw();build()}
+;['n','a','d'].forEach(function(i){$(i).oninput=build})
+$('copy').onclick=function(){var s=$('out').textContent;function fb(){var r=document.createRange();r.selectNodeContents($('out'));var x=getSelection();x.removeAllRanges();x.addRange(r);$('ok').textContent='Selected. Press copy.'}
+ try{navigator.clipboard.writeText(s).then(function(){$('ok').textContent='Copied!'},fb)}catch(e){fb()}}
+$('sub').onclick=function(){var u='https://github.com/TheArmadilloKing/BSS-Multiplayer-Servers/issues/new?title='+encodeURIComponent('Mod: '+$('n').value)+'&body='+encodeURIComponent('```js\n'+$('out').textContent+'```\n');if(u.length>7500){$('ok').textContent='Too long to send automatically. Press Copy, then paste it into a new issue between ``` lines.';window.open('https://github.com/TheArmadilloKing/BSS-Multiplayer-Servers/issues/new?title='+encodeURIComponent('Mod: '+$('n').value),'_blank');return}window.open(u,'_blank')}
+P.push({t:'msg',label:'Say hello',val:'Hello!'});draw();build()
+</script>
+</body></html>
