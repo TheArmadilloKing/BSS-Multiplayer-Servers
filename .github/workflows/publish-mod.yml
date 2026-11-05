@@ -1,0 +1,39 @@
+name: Publish community mod
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  issues: write
+jobs:
+  publish:
+    if: github.event.label.name == 'approved-mod'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: prep
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = require('./.github/scripts/publish.js')
+            await run({ github, context, core })
+      - name: Commit
+        if: steps.prep.outputs.ok == '1'
+        run: |
+          git config user.name "bsshub-bot"
+          git config user.email "bsshub-bot@users.noreply.github.com"
+          git add mods community.js
+          git commit -m "Add community mod from issue #${{ github.event.issue.number }}"
+          git pull --rebase
+          git push
+      - name: Refresh CDN
+        if: steps.prep.outputs.ok == '1'
+        continue-on-error: true
+        run: curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/community.js" || true
+      - name: Thank you
+        if: steps.prep.outputs.ok == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body: 'Published! It can take a little while to show up in the store.' })
+            await github.rest.issues.update({ ...context.repo, issue_number: context.issue.number, state: 'closed' })
